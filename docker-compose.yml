@@ -1,0 +1,168 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: banking_db
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql-init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+  user-service:
+    image: yaswanthreddy1602/user-service:v1
+    ports:
+      - "3001:3001"
+    environment:
+      DB_HOST: mysql
+      DB_USER: root
+      DB_PASS: rootpassword
+      DB_NAME: banking_db
+      REDIS_HOST: redis
+      PORT: 3001
+    depends_on:
+      - mysql
+      - redis
+
+  account-service:
+    image: yaswanthreddy1602/account-service:v1
+    ports:
+      - "3002:3002"
+    environment:
+      DB_HOST: mysql
+      DB_USER: root
+      DB_PASS: rootpassword
+      DB_NAME: banking_db
+      REDIS_HOST: redis
+      PORT: 3002
+    depends_on:
+      - mysql
+      - redis
+
+  transaction-service:
+    image: yaswanthreddy1602/transaction-service:v1
+    ports:
+      - "3003:3003"
+    environment:
+      DB_HOST: mysql
+      DB_USER: root
+      DB_PASS: rootpassword
+      DB_NAME: banking_db
+      REDIS_HOST: redis
+      MQ_URL: amqp://rabbitmq
+      PORT: 3003
+    depends_on:
+      - mysql
+      - redis
+      - rabbitmq
+
+  payment-service:
+    image: yaswanthreddy1602/payment-service:v1
+    ports:
+      - "3004:3004"
+    environment:
+      ACCOUNT_SVC_URL: http://account-service:3002
+      PORT: 3004
+    depends_on:
+      - account-service
+
+  loan-service:
+    image: yaswanthreddy1602/loan-service:v1
+    ports:
+      - "3005:3005"
+    environment:
+      DB_HOST: mysql
+      DB_USER: root
+      DB_PASS: rootpassword
+      DB_NAME: banking_db
+      PORT: 3005
+    depends_on:
+      - mysql
+
+  notification-service:
+    image: yaswanthreddy1602/notification-service:v1
+    ports:
+      - "3006:3006"
+    environment:
+      MQ_URL: amqp://rabbitmq
+      PORT: 3006
+    depends_on:
+      - rabbitmq
+
+  fraud-detection:
+    image: yaswanthreddy1602/fraud-detection-service:v1
+    ports:
+      - "3007:3007"
+    environment:
+      MQ_URL: amqp://rabbitmq
+      PORT: 3007
+    depends_on:
+      - rabbitmq
+
+  config-service:
+    image: yaswanthreddy1602/config-service:v1
+    ports:
+      - "3008:3008"
+    environment:
+      PORT: 3008
+
+  service-discovery:
+    image: yaswanthreddy1602/service-discovery:v1
+    ports:
+      - "3009:3009"
+    environment:
+      PORT: 3009
+
+  reporting-service:
+    image: yaswanthreddy1602/reporting-service:v1
+    ports:
+      - "3010:3010"
+    environment:
+      DB_HOST: mysql
+      DB_USER: root
+      DB_PASS: rootpassword
+      DB_NAME: banking_db
+      PORT: 3010
+    depends_on:
+      - mysql
+
+  frontend:
+    image: thamizhanm3/bank-frontend:v1
+    ports:
+      - "30030:80"
+    environment:
+      USER_URL: http://user-service:3001
+      ACCOUNT_URL: http://account-service:3002
+      TX_URL: http://transaction-service:3003
+      LOAN_URL: http://loan-service:3005
+      REPORT_URL: http://reporting-service:3010
+    depends_on:
+      - user-service
+      - account-service
+      - transaction-service
+      - loan-service
+      - reporting-service
+
+volumes:
+  mysql_data:
+  redis_data:
+  rabbitmq_data:
